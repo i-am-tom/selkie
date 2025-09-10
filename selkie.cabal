@@ -1,0 +1,27 @@
+cabal-version: 3.0
+name: selkie
+version: 0.1.0.0
+
+library
+  exposed-modules: MyLib
+  build-depends:
+    , base
+  hs-source-dirs: source
+  default-language: GHC2024
+
+-- executable selkie
+--   main-is: Main.hs
+--   build-depends:
+--     , base
+--     , selkie
+--   hs-source-dirs: binary
+--   default-language: GHC2024
+
+-- test-suite selkie-test
+--   default-language: GHC2024
+--   type: exitcode-stdio-1.0
+--   hs-source-dirs: tests
+--   main-is: Main.hs
+--   build-depends:
+--     , base
+--     , selkie
