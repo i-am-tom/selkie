@@ -5,6 +5,7 @@ version: 0.1.0.0
 library
   exposed-modules:
     Selkie.Category
+    Selkie.Profunctor
   build-depends:
     , base
   hs-source-dirs: source
