@@ -3,7 +3,8 @@ name: selkie
 version: 0.1.0.0
 
 library
-  exposed-modules: MyLib
+  exposed-modules:
+    Selkie.Category
   build-depends:
     , base
   hs-source-dirs: source
