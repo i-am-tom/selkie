@@ -7,6 +7,10 @@ library
     Selkie.Category
     Selkie.Generic
     Selkie.Profunctor
+
+    Selkie.Optics.Constructor
+    Selkie.Optics.Field
+    Selkie.Optics.Internal
   build-depends:
     , base
     , natural-transformation
