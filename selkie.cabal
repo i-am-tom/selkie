@@ -5,9 +5,12 @@ version: 0.1.0.0
 library
   exposed-modules:
     Selkie.Category
+    Selkie.Generic
     Selkie.Profunctor
   build-depends:
     , base
+    , natural-transformation
+    , profunctors
   hs-source-dirs: source
   default-language: GHC2024
 
