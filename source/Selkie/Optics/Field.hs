@@ -1,49 +1,70 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE OverloadedRecordUpdate #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Selkie.Optics.Field where
 
-import Control.Natural ((:~>) (..))
 import Data.Kind (Constraint, Type)
-import GHC.Generics hiding (Meta)
+import GHC.Generics
 import GHC.TypeLits (Symbol)
-import Selkie.Generic (Constrained', Lift (..), Lift', RepK)
-import Selkie.Optics.Internal (Field, HasMeta (..), HasMeta', Optic', Step)
-import Selkie.Profunctor (Profunctor (..), Strong (..), Obj)
+import Selkie.Utilities (Step, Or, type (<|>), Prepend)
+import Selkie.Profunctor.Class (Strong (..))
+import Selkie.Profunctor (ProfunctorG (..),StrongG')
+import GHC.TypeLits (ErrorMessage (..), TypeError)
+import Selkie.Optics.Types (Lens', GWalk)
 
-type StrongG :: (RepK -> RepK -> Type) -> Constraint
-type StrongG p = Strong (:*:) (Arrow p) (Obj p) p
+type HasField :: Symbol -> Type -> Type -> Constraint
+class HasField x s a | x s -> a where
+  field :: Lens' s a
 
-type GHasField :: [Step] -> (RepK -> RepK -> Type) -> RepK -> Type -> Constraint
-class (HasMeta' p, StrongG p) => GHasField path p rep a | path rep -> a where
-  gfield :: Optic' p rep (Rec0 a)
+instance GHasField (Field x (Rep s)) (Rep s) a => HasField x s a where
+  field :: Lens' s a
+  field = rec0 . gfield @(Field x (Rep s))
 
-instance (GHasField path p rep a, Obj p rep) => GHasField path p (M1 i m rep) a where
-  gfield :: (GHasField path p rep a, Obj p rep) => p (Rec0 a) (Rec0 a) -> p (M1 i m rep) (M1 i m rep)
+instance {-# OVERLAPPING #-} TypeError ('Text "He have no empty fields!") => HasField "" s s where
+  field :: Lens' s s
+  field = undefined
+
+---
+
+type GHasField :: [Step] -> (Type -> Type) -> Type -> Constraint
+class GHasField path s a | path s -> a where
+  gfield :: forall p. (StrongG' p, GWalk p s) => p (Rec0 a) (Rec0 a) -> p s s
+
+instance GHasField path s a => GHasField path (M1 i m s) a where
+  gfield :: (StrongG' p, GWalk p (M1 i m s)) => p (Rec0 a) (Rec0 a) -> p (M1 i m s) (M1 i m s)
   gfield = meta . gfield @path
 
-instance (GHasField path p l a, Obj p l, Obj p r) => GHasField ('Left ': path) p (l :*: r) a where
-  gfield :: (GHasField path p l a, Obj p l, Obj p r) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
+instance GHasField path l a => GHasField ('Left ': path) (l :*: r) a where
+  gfield :: (StrongG' p, GWalk p (l :*: r)) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
   gfield = first . gfield @path
 
-instance (GHasField path p r a, Obj p l, Obj p r) => GHasField ('Right ': path) p (l :*: r) a where
-  gfield :: (GHasField path p r a, Obj p l, Obj p r) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
+instance GHasField path r a => GHasField ('Right ': path) (l :*: r) a where
+  gfield :: (StrongG' p, GWalk p (l :*: r)) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
   gfield = second . gfield @path
 
-instance (HasMeta' p, StrongG p) => GHasField '[] p (Rec0 a) a where
-  gfield :: p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
+instance a ~ b => GHasField '[] (Rec0 a) b where
+  gfield :: (StrongG' p, GWalk p (Rec0 a)) => p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
   gfield = id
 
-type GHasField' :: Symbol -> (Type -> Type -> Type) -> Type -> Type -> Constraint
-type GHasField' x p s a = GHasField (Field x (Rep s)) (Lifted p) (Rep s) a
+---
 
-type HasField :: Symbol -> (Type -> Type -> Type) -> Type -> Type -> Constraint
-class HasField x p s a | x s -> a where
-  field :: (Obj p s, Obj p a) => Optic' p s a
+type Field :: Symbol -> (Type -> Type) -> [Step]
+type Field x rep = Field_ x rep `Or` (ShowType x ':<>: 'Text " not found")
 
-instance (Lift' p, Constrained' p s, GHasField' x p s a) => HasField x p s a where
-  field :: (Lift' p, Constrained' p s, GHasField' x p s a, Obj p s, Obj p a) => p a a -> p s s
-  field = generically . gfield @(Field x (Rep s)) . ungenerically
+type Field_ :: Symbol -> (Type -> Type) -> Maybe [Step]
+type family Field_ x rep where
+  Field_ x (D1 m rs) = Field_ x rs
+  Field_ x (C1 m rs) = Field_ x rs
+  Field_ x (l :*: r) = Prepend 'Left (Field_ x l) <|> Prepend 'Right (Field_ x r)
+  Field_ x (l :+: r) = TypeError ('Text "Sum types are not supported")
+
+  Field_ x (S1 ('MetaSel ('Just x) _ _ _) _) = 'Just '[]
+  Field_ x (S1 __________________________ _) = 'Nothing
+
+  Field_ x U1 = TypeError ('Text "Unit types are not supported")
+  Field_ x V1 = TypeError ('Text "Void types are not supported")

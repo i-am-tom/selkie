@@ -1,49 +1,74 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE OverloadedRecordUpdate #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE UndecidableSuperClasses #-}
 
 module Selkie.Optics.Constructor where
 
-import Control.Natural ((:~>) (..))
 import Data.Kind (Constraint, Type)
-import GHC.Generics hiding (Constructor, Meta)
+import GHC.Generics hiding (Constructor)
 import GHC.TypeLits (Symbol)
-import Selkie.Generic (Constrained', Lift (..), Lift', RepK)
-import Selkie.Optics.Internal (Constructor, HasMeta (..), HasMeta', Optic', Step)
-import Selkie.Profunctor (Profunctor (..), Choice (..), Obj)
+import Selkie.Utilities (Step, Or, type (<|>), Prepend)
+import Selkie.Profunctor.Class (Choice (..))
+import Selkie.Profunctor (ProfunctorG (..),ChoiceG')
+import GHC.TypeLits (ErrorMessage (..), TypeError)
+import Selkie.Optics.Types (Prism', GWalk)
 
-type ChoiceG :: (RepK -> RepK -> Type) -> Constraint
-type ChoiceG p = Choice (:*:) (Arrow p) (Obj p) p
+type HasConstructor :: Symbol -> Type -> Type -> Constraint
+class HasConstructor x s a | x s -> a where
+  constructor :: Prism' s a
 
-type GHasConstructor :: [Step] -> (RepK -> RepK -> Type) -> RepK -> Type -> Constraint
-class (HasMeta' p, ChoiceG p) => GHasConstructor path p rep a | path rep -> a where
-  gconstructor :: Optic' p rep (Rec0 a)
+instance GHasConstructor (Constructor x (Rep s)) (Rep s) a => HasConstructor x s a where
+  constructor :: Prism' s a
+  constructor = rec0 . gconstructor @(Constructor x (Rep s))
 
-instance (GHasConstructor path p rep a, Obj p rep) => GHasConstructor path p (M1 i m rep) a where
-  gconstructor :: (GHasConstructor path p rep a, Obj p rep) => p (Rec0 a) (Rec0 a) -> p (M1 i m rep) (M1 i m rep)
+instance {-# OVERLAPPING #-} TypeError ('Text "He have no empty constructors!") => HasConstructor "" s s where
+  constructor :: Prism' s s
+  constructor = undefined
+
+---
+
+type GHasConstructor :: [Step] -> (Type -> Type) -> Type -> Constraint
+class GHasConstructor path s a | path s -> a where
+  gconstructor :: forall p. (ChoiceG' p, GWalk p s) => p (Rec0 a) (Rec0 a) -> p s s
+
+instance GHasConstructor path s a => GHasConstructor path (M1 i m s) a where
+  gconstructor :: (ChoiceG' p, GWalk p (M1 i m s)) => p (Rec0 a) (Rec0 a) -> p (M1 i m s) (M1 i m s)
   gconstructor = meta . gconstructor @path
 
-instance (GHasConstructor path p l a, Obj p l, Obj p r) => GHasConstructor ('Left ': path) p (l :*: r) a where
-  gconstructor :: (GHasConstructor path p l a, Obj p l, Obj p r) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
+instance GHasConstructor path l a => GHasConstructor ('Left ': path) (l :+: r) a where
+  gconstructor :: (ChoiceG' p, GWalk p (l :+: r)) => p (Rec0 a) (Rec0 a) -> p (l :+: r) (l :+: r)
   gconstructor = left . gconstructor @path
 
-instance (GHasConstructor path p r a, Obj p l, Obj p r) => GHasConstructor ('Right ': path) p (l :*: r) a where
-  gconstructor :: (GHasConstructor path p r a, Obj p l, Obj p r) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
+instance GHasConstructor path r a => GHasConstructor ('Right ': path) (l :+: r) a where
+  gconstructor :: (ChoiceG' p, GWalk p (l :+: r)) => p (Rec0 a) (Rec0 a) -> p (l :+: r) (l :+: r)
   gconstructor = right . gconstructor @path
 
-instance (HasMeta' p, ChoiceG p) => GHasConstructor '[] p (Rec0 a) a where
-  gconstructor :: p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
+instance GHasConstructor '[] (Rec0 a) a where
+  gconstructor :: (ChoiceG' p, GWalk p (Rec0 a)) => p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
   gconstructor = id
 
-type GHasConstructor' :: Symbol -> (Type -> Type -> Type) -> Type -> Type -> Constraint
-type GHasConstructor' x p s a = GHasConstructor (Constructor x (Rep s)) (Lifted p) (Rep s) a
+instance GHasConstructor '[] U1 () where
+  gconstructor :: (ChoiceG' p, GWalk p U1) => p (Rec0 ()) (Rec0 ()) -> p U1 U1
+  gconstructor = unit
 
-type HasConstructor :: Symbol -> (Type -> Type -> Type) -> Type -> Type -> Constraint
-class HasConstructor x p s a | x s -> a where
-  constructor :: (Obj p s, Obj p a) => Optic' p s a
+---
 
-instance (Lift' p, Constrained' p s, GHasConstructor' x p s a) => HasConstructor x p s a where
-  constructor :: (Lift' p, Constrained' p s, GHasConstructor' x p s a, Obj p s, Obj p a) => p a a -> p s s
-  constructor = generically . gconstructor @(Constructor x (Rep s)) . ungenerically
+type Constructor :: Symbol -> (Type -> Type) -> [Step]
+type Constructor x rep = Constructor_ x rep `Or` (ShowType x ':<>: 'Text " not found")
+
+type Constructor_ :: Symbol -> (Type -> Type) -> Maybe [Step]
+type family Constructor_ x rep where
+  Constructor_ x (D1 m rs) = Constructor_ x rs
+  Constructor_ x (l :+: r) = Prepend 'Left (Constructor_ x l) <|> Prepend 'Right (Constructor_ x r)
+  Constructor_ x (l :*: r) = TypeError ('Text "Product types are not supported")
+
+  Constructor_ x (C1 ('MetaCons x _ _) _) = 'Just '[]
+  Constructor_ x (C1 _________________ _) = 'Nothing
+  Constructor_ x (S1 _________________ _) = TypeError ('Text "How did this happen?")
+
+  Constructor_ x U1 = TypeError ('Text "Unit types are not supported")
+  Constructor_ x V1 = TypeError ('Text "Void types are not supported")
