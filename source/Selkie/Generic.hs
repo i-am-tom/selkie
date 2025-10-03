@@ -1,56 +1,66 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE DefaultSignatures #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE QuantifiedConstraints #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE UndecidableSuperClasses #-}
 
 module Selkie.Generic where
 
 import Control.Natural ((:~>) (..))
 import Data.Kind (Constraint, Type)
 import Data.Profunctor (Forget (..))
-import GHC.Generics ((:+:), (:*:), Generic (..), Rec0, K1 (..), M1 (..), U1)
-import Prelude hiding ((.))
-import Selkie.Category (Category ((.)), Terminal)
-import Selkie.Profunctor (Profunctor, Profunctor', Strong, Choice, Forget1 (..))
+import GHC.Generics (Generic (..), K1 (..), Rec0)
+import Selkie.Annotation (AnnC (..), GAnnC (..), Ann, GAnn, ForgetA (..), GForgetA (..))
+import Selkie.Profunctor (Profunctor', Forget1 (..), )
 
-type RepK :: Type
-type RepK = Type -> Type
+type OK :: Type -> Constraint
+class (Generic x, Ann x ~ GAnn (Rep x)) => OK x
+instance (Generic x, Ann x ~ GAnn (Rep x)) => OK x
 
----
-
-type Lift :: (Type -> RepK -> Constraint) -> (RepK -> RepK -> Type) -> (Type -> Type -> Type) -> Constraint
-class (Profunctor' p, Profunctor' p', Constrained p ~ c, Lifted p ~ p')
-    => Lift c p' p | p -> p' c where
-  type Constrained p :: Type -> RepK -> Constraint
-  type Lifted p :: RepK -> RepK -> Type
-
-  generically :: (c x (Rep x), c y (Rep y)) => p' (Rep x) (Rep y) -> p x y
+type Represented :: (Type -> Type -> Type) -> ((Type -> Type) -> (Type -> Type) -> Type) -> Constraint
+class (Profunctor' p, Profunctor' p', p' ~ Representation p) => Represented p p' | p -> p' where
+  type Representation p :: (Type -> Type) -> (Type -> Type) -> Type
+  generically :: (OK x, OK y) => p' (Rep x) (Rep y) -> p x y
   ungenerically :: p x y -> p' (Rec0 x) (Rec0 y)
 
-type Lift' :: (Type -> Type -> Type) -> Constraint
-type Lift' p = Lift (Constrained p) (Lifted p) p
+type Represented' :: (Type -> Type -> Type) -> Constraint
+type Represented' p = Represented p (Representation p)
 
-type Constrained' :: (Type -> Type -> Type) -> Type -> Constraint
-type Constrained' p s = Constrained p s (Rep s)
+instance Represented (->) (:~>) where
+  type Representation (->) = (:~>)
 
-class (Generic x, Rep x ~ y) => IsRepresentedBy x y
-instance (Generic x, Rep x ~ y) => IsRepresentedBy x y
+  generically :: (OK x, OK y) => (Rep x :~> Rep y) -> (x -> y)
+  generically (NT f) = to . f . from
 
-instance Lift IsRepresentedBy (:~>) (->) where
-  type Constrained (->) = IsRepresentedBy
-  type Lifted (->) = (:~>)
+  ungenerically :: (x -> y) -> (Rec0 x :~> Rec0 y)
+  ungenerically f = NT (K1 . f . unK1)
 
-  generically :: (IsRepresentedBy x (Rep x), IsRepresentedBy y (Rep y)) => Rep x :~> Rep y -> x -> y
-  generically (NT f) = \x -> to (f (from x))
+instance Represented (Forget r) (Forget1 r) where
+  type Representation (Forget r) = Forget1 r
 
-  ungenerically :: (x -> y) -> Rec0 x :~> Rec0 y
-  ungenerically f = NT \(K1 x) -> K1 (f x)
-
-instance Lift IsRepresentedBy (Forget1 r) (Forget r) where
-  type Constrained (Forget r) = IsRepresentedBy
-  type Lifted (Forget r) = Forget1 r
-
-  generically :: (IsRepresentedBy x (Rep x), IsRepresentedBy y (Rep y)) => Forget1 r (Rep x) (Rep y) -> Forget r x y
-  generically (Forget1 f) = Forget \x -> f (from x)
+  generically :: (OK x, OK y) => Forget1 r (Rep x) (Rep y) -> Forget r x y
+  generically (Forget1 f) = Forget (f . from)
 
   ungenerically :: Forget r x y -> Forget1 r (Rec0 x) (Rec0 y)
-  ungenerically (Forget f) = Forget1 \(K1 x) -> f x
+  ungenerically (Forget f) = Forget1 (f . unK1)
+
+instance Represented (AnnC w) (GAnnC w) where
+  type Representation (AnnC w) = GAnnC w
+
+  generically :: (OK x, OK y) => GAnnC w (Rep x) (Rep y) -> AnnC w x y
+  generically (GAnnC f) = AnnC f
+
+  ungenerically :: AnnC w x y -> GAnnC w (Rec0 x) (Rec0 y)
+  ungenerically (AnnC f) = GAnnC f
+
+instance Represented (ForgetA r w) (GForgetA r w) where
+  type Representation (ForgetA r w) = GForgetA r w
+
+  generically :: (OK x, OK y) => GForgetA r w (Rep x) (Rep y) -> ForgetA r w x y
+  generically (GForgetA f) = ForgetA f
+
+  ungenerically :: ForgetA r w x y -> GForgetA r w (Rec0 x) (Rec0 y)
+  ungenerically (ForgetA f) = GForgetA f

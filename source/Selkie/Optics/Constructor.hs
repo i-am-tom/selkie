@@ -1,10 +1,7 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
-{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE FunctionalDependencies #-}
-{-# LANGUAGE OverloadedRecordUpdate #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
-{-# LANGUAGE UndecidableSuperClasses #-}
 
 module Selkie.Optics.Constructor where
 
@@ -12,47 +9,46 @@ import Data.Kind (Constraint, Type)
 import GHC.Generics hiding (Constructor)
 import GHC.TypeLits (Symbol)
 import Selkie.Utilities (Step, Or, type (<|>), Prepend)
-import Selkie.Profunctor.Class (Choice (..))
-import Selkie.Profunctor (ProfunctorG (..),ChoiceG')
 import GHC.TypeLits (ErrorMessage (..), TypeError)
-import Selkie.Optics.Types (Prism', GWalk)
+import Selkie.Generic (Represented (..), OK)
+import Selkie.Optics.Helpers (Prism', GPrismLike (..), GIsoLike (..))
 
 type HasConstructor :: Symbol -> Type -> Type -> Constraint
 class HasConstructor x s a | x s -> a where
-  constructor :: Prism' s a
+  constructor :: OK s => Prism' s a
 
 instance GHasConstructor (Constructor x (Rep s)) (Rep s) a => HasConstructor x s a where
-  constructor :: Prism' s a
-  constructor = rec0 . gconstructor @(Constructor x (Rep s))
+  constructor :: OK s => Prism' s a
+  constructor = generically . gconstructor @(Constructor x (Rep s)) . ungenerically
 
-instance {-# OVERLAPPING #-} TypeError ('Text "He have no empty constructors!") => HasConstructor "" s s where
-  constructor :: Prism' s s
+instance {-# OVERLAPPING #-} TypeError ('Text "No empty fields!") => HasConstructor "" s s where
+  constructor :: OK s => Prism' s s
   constructor = undefined
 
 ---
 
 type GHasConstructor :: [Step] -> (Type -> Type) -> Type -> Constraint
 class GHasConstructor path s a | path s -> a where
-  gconstructor :: forall p. (ChoiceG' p, GWalk p s) => p (Rec0 a) (Rec0 a) -> p s s
+  gconstructor :: forall p. GPrismLike p => p (Rec0 a) (Rec0 a) -> p s s
 
 instance GHasConstructor path s a => GHasConstructor path (M1 i m s) a where
-  gconstructor :: (ChoiceG' p, GWalk p (M1 i m s)) => p (Rec0 a) (Rec0 a) -> p (M1 i m s) (M1 i m s)
+  gconstructor :: (GPrismLike p) => p (Rec0 a) (Rec0 a) -> p (M1 i m s) (M1 i m s)
   gconstructor = meta . gconstructor @path
 
 instance GHasConstructor path l a => GHasConstructor ('Left ': path) (l :+: r) a where
-  gconstructor :: (ChoiceG' p, GWalk p (l :+: r)) => p (Rec0 a) (Rec0 a) -> p (l :+: r) (l :+: r)
+  gconstructor :: (GPrismLike p) => p (Rec0 a) (Rec0 a) -> p (l :+: r) (l :+: r)
   gconstructor = left . gconstructor @path
 
 instance GHasConstructor path r a => GHasConstructor ('Right ': path) (l :+: r) a where
-  gconstructor :: (ChoiceG' p, GWalk p (l :+: r)) => p (Rec0 a) (Rec0 a) -> p (l :+: r) (l :+: r)
+  gconstructor :: (GPrismLike p) => p (Rec0 a) (Rec0 a) -> p (l :+: r) (l :+: r)
   gconstructor = right . gconstructor @path
 
-instance GHasConstructor '[] (Rec0 a) a where
-  gconstructor :: (ChoiceG' p, GWalk p (Rec0 a)) => p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
+instance a ~ b => GHasConstructor '[] (Rec0 a) b where
+  gconstructor :: (GPrismLike p) => p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
   gconstructor = id
 
 instance GHasConstructor '[] U1 () where
-  gconstructor :: (ChoiceG' p, GWalk p U1) => p (Rec0 ()) (Rec0 ()) -> p U1 U1
+  gconstructor :: (GPrismLike p) => p (Rec0 ()) (Rec0 ()) -> p U1 U1
   gconstructor = unit
 
 ---

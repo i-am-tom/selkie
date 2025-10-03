@@ -1,6 +1,5 @@
-module Selkie.Profunctor
-  ( module M
-  ) where
+module Selkie.Profunctor (module M) where
 
-import Selkie.Profunctor.Class as M
-import Selkie.Profunctor.Generic as M
+import Selkie.Profunctor.Profunctor as M
+import Selkie.Profunctor.Strong as M
+import Selkie.Profunctor.Choice as M

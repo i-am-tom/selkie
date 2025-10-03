@@ -1,85 +1,83 @@
 {-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Selkie.Annotation.Category where
 
 import Data.Kind (Type)
-import GHC.Generics ((:*:) (..), (:+:) (..))
-import Selkie.Annotation.Types (Annotate (..), Annotate', GAnnotated (..), GAnnotate')
+import GHC.Generics ((:*:) (..), (:+:))
+import Selkie.Annotation.Types (Annotate (..), GAnnotate (..))
 import Selkie.Category (Category (..), Cartesian (..), Cocartesian (..))
-import Selkie.Generic (RepK)
-import Prelude hiding (id, (.))
+import Prelude hiding ((.))
 
-type Ann :: Type -> Type -> Type
-newtype Ann a b = Ann (forall w. (Monoid w) => Annotated a w -> Annotated b w)
+type AnnC :: Type -> Type -> Type -> Type
+newtype AnnC w x y = AnnC { annC :: Ann x w -> Ann y w }
 
-instance Category Annotate' Ann where
-  type Obj Ann = Annotate'
+instance Category Annotate (AnnC w) where
+  type Obj (AnnC w) = Annotate
 
-  id :: Annotate' x => Ann x x
-  id = Ann id
+  (.) :: (Annotate x, Annotate y, Annotate z) => AnnC w y z -> AnnC w x y -> AnnC w x z
+  AnnC f . AnnC g = AnnC (f . g)
 
-  (.) :: (Annotate' x, Annotate' y, Annotate' z) => Ann y z -> Ann x y -> Ann x z
-  Ann f . Ann g = Ann (f . g)
+  id :: (Annotate x) => AnnC w x x
+  id = AnnC \x -> x
 
-instance Cartesian Annotate' (,) Ann where
-  type Product Ann = (,)
+instance Cartesian (,) Annotate (AnnC w) where
+  type Product (AnnC w) = (,)
+  
+  (△) :: (Annotate x, Annotate y, Annotate z) => AnnC w x y -> AnnC w x z -> AnnC w x (y, z)
+  AnnC f △ AnnC g = AnnC \x -> f x :*: g x
+  
+  exl :: (Annotate x, Annotate y) => AnnC w (x, y) x
+  exl = AnnC \(x :*: _) -> x
+  
+  exr :: (Annotate x, Annotate y) => AnnC w (x, y) y
+  exr = AnnC \(_ :*: y) -> y
 
-  (△) :: (Annotate' x, Annotate' y, Annotate' z) => Ann x y -> Ann x z -> Ann x (y, z)
-  Ann f △ Ann g = Ann \x -> f x :*: g x
+instance Monoid w => Cocartesian Either Annotate (AnnC w) where
+  type Sum (AnnC w) = Either
+  
+  (▽) :: (Annotate x, Annotate y, Annotate z) => AnnC w x z -> AnnC w y z -> AnnC w (Either x y) z
+  AnnC f ▽ AnnC g = AnnC \(x :*: y) -> f x <> g y
 
-  exl :: (Annotate' x, Annotate' y) => Ann (x, y) x
-  exl = Ann \(x :*: _) -> x
+  inl :: (Annotate x, Annotate y) => AnnC w x (Either x y)
+  inl = AnnC \x -> x :*: mempty
+  
+  inr :: (Annotate x, Annotate y) => AnnC w y (Either x y)
+  inr = AnnC \y -> mempty :*: y
 
-  exr :: (Annotate' x, Annotate' y) => Ann (x, y) y
-  exr = Ann \(_ :*: y) -> y
+type GAnnC :: Type -> (Type -> Type) -> (Type -> Type) -> Type
+newtype GAnnC w x y = GAnnC { gannC :: GAnn x w -> GAnn y w }
 
-instance Cocartesian Annotate' (,) Ann where
-  type Coproduct Ann = (,)
+instance Category GAnnotate (GAnnC w) where
+  type Obj (GAnnC w) = GAnnotate
+  
+  (.) :: (GAnnotate x, GAnnotate y, GAnnotate z) => GAnnC w y z -> GAnnC w x y -> GAnnC w x z
+  GAnnC f . GAnnC g = GAnnC (f . g)
 
-  (▽) :: (Annotate' x, Annotate' y, Annotate' z) => Ann x z -> Ann y z -> Ann (x, y) z
-  Ann f ▽ Ann g = Ann \(x :*: y) -> f x <> g y
+  id :: (GAnnotate x) => GAnnC w x x
+  id = GAnnC \x -> x
 
-  inl :: (Annotate' x, Annotate' y) => Ann x (x, y)
-  inl = Ann \x -> x :*: mempty
+instance Cartesian (:*:) GAnnotate (GAnnC w) where
+  type Product (GAnnC w) = (:*:)
+  
+  (△) :: (GAnnotate x, GAnnotate y, GAnnotate z) => GAnnC w x y -> GAnnC w x z -> GAnnC w x (y :*: z)
+  GAnnC f △ GAnnC g = GAnnC \x -> f x :*: g x
+  
+  exl :: (GAnnotate x, GAnnotate y) => GAnnC w (x :*: y) x
+  exl = GAnnC \(x :*: _) -> x
+  
+  exr :: (GAnnotate x, GAnnotate y) => GAnnC w (x :*: y) y
+  exr = GAnnC \(_ :*: y) -> y
 
-  inr :: (Annotate' x, Annotate' y) => Ann y (x, y)
-  inr = Ann \y -> mempty :*: y
-
----
-
-type GAnn :: RepK -> RepK -> Type
-newtype GAnn f g = GAnn (forall w. (Monoid w) => GAnnotated f w -> GAnnotated g w)
-
-instance Category GAnnotate' GAnn where
-  type Obj GAnn = GAnnotate'
-
-  id :: GAnnotate' rep => GAnn rep rep
-  id = GAnn id
-
-  (.) :: (GAnnotate' f, GAnnotate' g, GAnnotate' h) => GAnn g h -> GAnn f g -> GAnn f h
-  GAnn f . GAnn g = GAnn (f . g)
-
-instance Cartesian GAnnotate' (:*:) GAnn where
-  type Product GAnn = (:*:)
-
-  (△) :: (GAnnotate' f, GAnnotate' g, GAnnotate' h) => GAnn f g -> GAnn f h -> GAnn f (g :*: h)
-  GAnn f △ GAnn g = GAnn \x -> f x :*: g x
-
-  exl :: (GAnnotate' f, GAnnotate' g) => GAnn (f :*: g) f
-  exl = GAnn \(x :*: _) -> x
-
-  exr :: (GAnnotate' f, GAnnotate' g) => GAnn (f :*: g) g
-  exr = GAnn \(_ :*: y) -> y
-
-instance Cocartesian GAnnotate' (:*:) GAnn where
-  type Coproduct GAnn = (:*:)
-
-  (▽) :: (GAnnotate' f, GAnnotate' g, GAnnotate' h) => GAnn f h -> GAnn g h -> GAnn (f :*: g) h
-  GAnn f ▽ GAnn g = GAnn \(x :*: y) -> f x <> g y
-
-  inl :: (GAnnotate' f, GAnnotate' g) => GAnn f (f :*: g)
-  inl = GAnn \x -> x :*: mempty
-
-  inr :: (GAnnotate' f, GAnnotate' g) => GAnn g (f :*: g)
-  inr = GAnn \x -> mempty :*: x
+instance Monoid w => Cocartesian (:+:) GAnnotate (GAnnC w) where
+  type Sum (GAnnC w) = (:+:)
+  
+  (▽) :: (GAnnotate x, GAnnotate y, GAnnotate z) => GAnnC w x z -> GAnnC w y z -> GAnnC w (x :+: y) z
+  GAnnC f ▽ GAnnC g = GAnnC \(x :*: y) -> f x <> g y
+  
+  inl :: (GAnnotate x, GAnnotate y) => GAnnC w x (x :+: y)
+  inl = GAnnC \x -> x :*: mempty
+  
+  inr :: (GAnnotate x, GAnnotate y) => GAnnC w y (x :+: y)
+  inr = GAnnC \y -> mempty :*: y

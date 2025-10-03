@@ -1,6 +1,6 @@
-module Selkie.Category
-  ( module M
-  ) where
+module Selkie.Category (module M) where
 
-import Selkie.Category.Class as M
-import Selkie.Category.Generic as M
+import Selkie.Category.Category as M
+import Selkie.Category.Cartesian as M
+import Selkie.Category.Cocartesian as M
+import Selkie.Category.Bicartesian as M

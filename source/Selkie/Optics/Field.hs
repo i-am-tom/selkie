@@ -12,20 +12,19 @@ import Data.Kind (Constraint, Type)
 import GHC.Generics
 import GHC.TypeLits (Symbol)
 import Selkie.Utilities (Step, Or, type (<|>), Prepend)
-import Selkie.Profunctor.Class (Strong (..))
-import Selkie.Profunctor (ProfunctorG (..),StrongG')
 import GHC.TypeLits (ErrorMessage (..), TypeError)
-import Selkie.Optics.Types (Lens', GWalk)
+import Selkie.Generic (Represented (..), OK)
+import Selkie.Optics.Helpers (Lens', GLensLike (..), GIsoLike (..))
 
 type HasField :: Symbol -> Type -> Type -> Constraint
 class HasField x s a | x s -> a where
-  field :: Lens' s a
+  field :: OK s => Lens' s a
 
 instance GHasField (Field x (Rep s)) (Rep s) a => HasField x s a where
-  field :: Lens' s a
-  field = rec0 . gfield @(Field x (Rep s))
+  field :: OK s => Lens' s a
+  field = generically . gfield @(Field x (Rep s)) . ungenerically
 
-instance {-# OVERLAPPING #-} TypeError ('Text "He have no empty fields!") => HasField "" s s where
+instance {-# OVERLAPPING #-} TypeError ('Text "No empty fields!") => HasField "" s s where
   field :: Lens' s s
   field = undefined
 
@@ -33,23 +32,27 @@ instance {-# OVERLAPPING #-} TypeError ('Text "He have no empty fields!") => Has
 
 type GHasField :: [Step] -> (Type -> Type) -> Type -> Constraint
 class GHasField path s a | path s -> a where
-  gfield :: forall p. (StrongG' p, GWalk p s) => p (Rec0 a) (Rec0 a) -> p s s
+  gfield :: forall p. GLensLike p => p (Rec0 a) (Rec0 a) -> p s s
 
 instance GHasField path s a => GHasField path (M1 i m s) a where
-  gfield :: (StrongG' p, GWalk p (M1 i m s)) => p (Rec0 a) (Rec0 a) -> p (M1 i m s) (M1 i m s)
+  gfield :: (GLensLike p) => p (Rec0 a) (Rec0 a) -> p (M1 i m s) (M1 i m s)
   gfield = meta . gfield @path
 
 instance GHasField path l a => GHasField ('Left ': path) (l :*: r) a where
-  gfield :: (StrongG' p, GWalk p (l :*: r)) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
+  gfield :: (GLensLike p) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
   gfield = first . gfield @path
 
 instance GHasField path r a => GHasField ('Right ': path) (l :*: r) a where
-  gfield :: (StrongG' p, GWalk p (l :*: r)) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
+  gfield :: (GLensLike p) => p (Rec0 a) (Rec0 a) -> p (l :*: r) (l :*: r)
   gfield = second . gfield @path
 
 instance a ~ b => GHasField '[] (Rec0 a) b where
-  gfield :: (StrongG' p, GWalk p (Rec0 a)) => p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
+  gfield :: (GLensLike p) => p (Rec0 a) (Rec0 a) -> p (Rec0 a) (Rec0 a)
   gfield = id
+
+instance GHasField '[] U1 () where
+  gfield :: (GLensLike p) => p (Rec0 ()) (Rec0 ()) -> p U1 U1
+  gfield = unit
 
 ---
 

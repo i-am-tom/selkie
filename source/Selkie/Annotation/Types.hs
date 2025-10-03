@@ -1,4 +1,5 @@
 {-# LANGUAGE AllowAmbiguousTypes #-}
+{-# LANGUAGE BlockArguments #-}
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE FunctionalDependencies #-}
 {-# LANGUAGE QuantifiedConstraints #-}
@@ -8,104 +9,107 @@
 module Selkie.Annotation.Types where
 
 import Data.Functor.Identity (Identity (..))
-import Data.Foldable (fold)
-import Data.Kind (Constraint, Type)
-import GHC.Generics ((:+:) (..), (:*:) (..), Generic (..), Generically (..), M1 (..), K1 (..), Rec0)
-import Selkie.Generic (RepK)
+import Data.Kind (Type, Constraint)
+import GHC.Generics (Generic (..), Generically (..))
+import GHC.Generics qualified as G
+import Prelude hiding ((.), id)
 
-type Annotate :: (Type -> Type) -> Type -> Constraint
-class (Annotated x ~ a, Foldable a, forall w. (Monoid w) => Monoid (a w))
-    => Annotate a x | x -> a where
-  type Annotated x :: Type -> Type
+-- We can't have the QC directly because we want a type family in the head. We
+-- can't use an MPTC because it breaks deriving. So, hacks.
+class (forall x. Monoid x => Monoid (t x)) => Monoid1 t
+instance (forall x. Monoid x => Monoid (t x)) => Monoid1 t
 
-  attach :: Monoid w => w -> a w -> a w
-  change :: Monoid w => x -> x -> a w -> w
+-- No QC because we can't have type families in the head, so it has to be a
+-- MPTC, which means deriving is ugly.
+type Annotate :: Type -> Constraint
+class (Monoid1 (Ann x)) => Annotate x where
+  type Ann x :: Type -> Type
 
-type Annotate' :: Type -> Constraint
-class Annotate (Annotated x) x => Annotate' x
-instance Annotate (Annotated x) x => Annotate' x
+  active :: Monoid w => x -> Ann x w -> w
+  attach :: Monoid w => w -> Ann x w -> Ann x w
+
+instance (Generic x, GAnnotate (Rep x))
+    => Annotate (Generically x) where
+  type Ann (Generically x) = GAnn (Rep x)
+
+  active :: Monoid w => Generically x -> Ann (Generically x) w -> w
+  active (Generically x) = gactive (from x)
+
+  attach :: Monoid w => w -> Ann (Generically x) w -> Ann (Generically x) w
+  attach = gattach @(Rep x)
+
+deriving via Generically (x, y) instance (Annotate x, Annotate y) => Annotate (x, y)
+deriving via Generically (Either x y) instance (Annotate x, Annotate y) => Annotate (Either x y)
+deriving via Generically () instance Annotate ()
 
 type Atomic :: Type -> Type
 newtype Atomic x = Atomic x
-  deriving stock (Eq)
+  deriving stock (Eq, Ord, Show)
 
-instance Eq x => Annotate Identity (Atomic x) where
-  type Annotated (Atomic x) = Identity
+instance Annotate (Atomic x) where
+  type Ann (Atomic x) = Identity
 
-  attach :: Monoid w => w -> Identity w -> Identity w
+  active :: Monoid w => Atomic x -> Ann (Atomic x) w -> w
+  active _ (Identity ws) = ws
+
+  attach :: Monoid w => w -> Ann (Atomic x) w -> Ann (Atomic x) w
   attach w (Identity ws) = Identity (w <> ws)
 
-  change :: Monoid w => Atomic x -> Atomic x -> Identity w -> w
-  change x y (Identity ws) = if x == y then mempty else ws
+deriving via Atomic [x] instance Annotate [x]
+deriving via Atomic Int instance Annotate Int
+deriving via Atomic Bool instance Annotate Bool
 
 ---
 
-type GAnnotate :: (Type -> Type) -> (Type -> Type) -> Constraint
-class (GAnnotated rep ~ a, Foldable a, forall w. (Monoid w) => Monoid (a w))
-    => GAnnotate a rep | rep -> a where
-  type GAnnotated rep :: Type -> Type
+type GAnnotate :: (Type -> Type) -> Constraint
+class Monoid1 (GAnn rep) => GAnnotate rep where
+  type GAnn rep :: Type -> Type
 
-  gattach :: Monoid w => w -> a w -> a w
-  gchange :: Monoid w => rep v -> rep v -> a w -> w
+  gactive :: Monoid w => rep v -> GAnn rep w -> w
+  gattach :: Monoid w => w -> GAnn rep w -> GAnn rep w
 
-type GAnnotate' :: RepK -> Constraint
-class GAnnotate (GAnnotated rep) rep => GAnnotate' rep
-instance GAnnotate (GAnnotated rep) rep => GAnnotate' rep
+instance GAnnotate x => GAnnotate (G.M1 i m x) where
+  type GAnn (G.M1 i m x) = GAnn x
 
-instance (GAnnotate a x, forall w. Monoid w => Monoid (a w))
-    => GAnnotate a (M1 i m x) where
-  type GAnnotated (M1 i m x) = GAnnotated x
+  gactive :: Monoid w => G.M1 i m x v -> GAnn x w -> w
+  gactive (G.M1 x) = gactive x
 
-  gattach :: Monoid w => w -> a w -> a w
-  gattach = gattach @_ @x
+  gattach :: Monoid w => w -> GAnn x w -> GAnn x w
+  gattach = gattach @x
 
-  gchange :: Monoid w => M1 i m x v -> M1 i m x v -> a w -> w
-  gchange (M1 x) (M1 y) = gchange x y
+instance (GAnnotate l, GAnnotate r) => GAnnotate (l G.:*: r) where
+  type GAnn (l G.:*: r) = GAnn l G.:*: GAnn r
 
-instance (GAnnotate l x, GAnnotate r y) => GAnnotate (l :*: r) (x :+: y) where
-  type GAnnotated (x :+: y) = GAnnotated x :*: GAnnotated y
+  gactive :: Monoid w => (l G.:*: r) v -> (GAnn l G.:*: GAnn r) w -> w
+  gactive (l G.:*: r) (a G.:*: b) = gactive l a <> gactive r b
 
-  gattach :: Monoid w => w -> (l :*: r) w -> (l :*: r) w
-  gattach w (xs :*: ys) = gattach @_ @x w xs :*: gattach @_ @y w ys
+  gattach :: Monoid w => w -> (GAnn l G.:*: GAnn r) w -> (GAnn l G.:*: GAnn r) w
+  gattach w (l G.:*: r) = gattach @l w l G.:*: gattach @r w r
 
-  gchange :: Monoid w => (x :+: y) v -> (x :+: y) v -> (:*:) l r w -> w
-  gchange xs ys (l :*: r) = case (xs, ys) of
-    (L1 x, L1 y) -> gchange x y l
-    (R1 x, R1 y) -> gchange x y r
-    ____________ -> fold (l :*: r)
+instance (GAnnotate l, GAnnotate r) => GAnnotate (l G.:+: r) where
+  type GAnn (l G.:+: r) = GAnn l G.:*: GAnn r
 
-instance (GAnnotate l x, GAnnotate r y) => GAnnotate (l :*: r) (x :*: y) where
-  type GAnnotated (x :*: y) = GAnnotated x :*: GAnnotated y
+  gactive :: Monoid w => (l G.:+: r) v -> (GAnn l G.:*: GAnn r) w -> w
+  gactive (G.L1 l) (a G.:*: _) = gactive l a
+  gactive (G.R1 r) (_ G.:*: b) = gactive r b
 
-  gattach :: Monoid w => w -> (l :*: r) w -> (l :*: r) w
-  gattach w (l :*: r) = gattach @_ @x w l :*: gattach @_ @y w r
+  gattach :: Monoid w => w -> (GAnn l G.:*: GAnn r) w -> (GAnn l G.:*: GAnn r) w
+  gattach w (a G.:*: b) = gattach @l w a G.:*: gattach @r w b
 
-  gchange :: Monoid w => (x :*: y) v -> (x :*: y) v -> (:*:) l r w -> w
-  gchange (x :*: y) (x' :*: y') (l :*: r) = gchange x x' l <> gchange y y' r
+instance GAnnotate G.U1 where
+  type GAnn G.U1 = Identity
 
-instance Annotate a x => GAnnotate a (Rec0 x) where
-  type GAnnotated (Rec0 x) = Annotated x
+  gactive :: Monoid w => G.U1 v -> Identity w -> w
+  gactive _ (Identity ws) = ws
 
-  gattach :: Monoid w => w -> a w -> a w
-  gattach = attach @_ @x
+  gattach :: Monoid w => w -> Identity w -> Identity w
+  gattach w (Identity ws) = Identity (w <> ws)
 
-  gchange :: Monoid w => Rec0 x v -> Rec0 x v -> a w -> w
-  gchange (K1 x) (K1 y) = change x y
+instance Annotate x => GAnnotate (G.Rec0 x) where
+  type GAnn (G.Rec0 x) = Ann x
 
-instance (Generic s, GAnnotate a (Rep s), Foldable a)
-    => Annotate a (Generically s) where
-  type Annotated (Generically s) = GAnnotated (Rep s)
+  gactive :: Monoid w => G.Rec0 x v -> Ann x w -> w
+  gactive (G.K1 x) = active x
 
-  attach :: Monoid w => w -> a w -> a w
-  attach = gattach @_ @(Rep s)
-
-  change :: Monoid w => Generically s -> Generically s -> a w -> w
-  change (Generically x) (Generically y) = gchange (from x) (from y)
-
-deriving via Generically (x, y)
-  instance (Annotate a x, Annotate b y)
-    => Annotate (a :*: b) (x, y)
-
-deriving via Generically (Either x y)
-  instance (Annotate a x, Annotate b y)
-    => Annotate (a :*: b) (Either x y)
+  gattach :: Monoid w => w -> Ann x w -> Ann x w
+  gattach = attach @x

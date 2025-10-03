@@ -4,21 +4,37 @@ version: 0.1.0.0
 
 library
   exposed-modules:
-    Selkie.Annotation.Category
-    Selkie.Annotation.Types
-
+    Selkie.Annotation
     Selkie.Category
     Selkie.Generic
+    Selkie.Optics
     Selkie.Profunctor
+    Selkie.Utilities
+  other-modules:
+    Selkie.Annotation.Category
+    Selkie.Annotation.Generic
+    Selkie.Annotation.Profunctor
+    Selkie.Annotation.Types
+
+    Selkie.Category.Category
+    Selkie.Category.Cartesian
+    Selkie.Category.Cocartesian
+    Selkie.Category.Bicartesian
 
     Selkie.Optics.Constructor
     Selkie.Optics.Field
-    Selkie.Optics.Internal
+    Selkie.Optics.Helpers
+
+    Selkie.Profunctor.Choice
+    Selkie.Profunctor.Profunctor
+    Selkie.Profunctor.Strong
   build-depends:
     , base
+    , constraints
     , natural-transformation
     , profunctors
   hs-source-dirs: source
+  ghc-options: -Wall -Wextra
   default-language: GHC2024
 
 -- executable selkie
@@ -29,11 +45,14 @@ library
 --   hs-source-dirs: binary
 --   default-language: GHC2024
 
--- test-suite selkie-test
---   default-language: GHC2024
---   type: exitcode-stdio-1.0
---   hs-source-dirs: tests
---   main-is: Main.hs
---   build-depends:
---     , base
---     , selkie
+test-suite tests
+  default-language: GHC2024
+  type: exitcode-stdio-1.0
+  hs-source-dirs: tests
+  main-is: Main.hs
+  build-depends:
+    , base
+    , containers
+    , hedgehog
+    , profunctors
+    , selkie
