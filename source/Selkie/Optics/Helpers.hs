@@ -6,7 +6,7 @@ module Selkie.Optics.Helpers where
 import Control.Natural ((:~>) (..))
 import Data.Kind (Constraint, Type)
 import GHC.Generics ((:*:) (..), (:+:) (..), K1 (..), M1 (..), Rec0, U1 (..))
-import Selkie.Annotation (GAnnC (..))
+import Selkie.Annotation (GAnnC (..), GForgetA (..))
 import Selkie.Generic (Represented', Representation)
 import Selkie.Profunctor (Profunctor', Strong', Choice', Forget1 (..))
 
@@ -36,6 +36,13 @@ instance GIsoLike (GAnnC w) where
 
   unit :: Optic (GAnnC w) U1 U1 (Rec0 ()) (Rec0 ())
   unit (GAnnC f) = GAnnC f
+
+instance GIsoLike (GForgetA r w) where
+  meta :: Optic (GForgetA r w) (M1 i m x) (M1 i m y) x y
+  meta (GForgetA f) = GForgetA f
+
+  unit :: Optic (GForgetA r w) U1 U1 (Rec0 ()) (Rec0 ())
+  unit (GForgetA f) = GForgetA f
 
 instance GIsoLike (Forget1 r) where
   meta :: Optic (Forget1 r) (M1 i m x) (M1 i m y) x y
@@ -74,6 +81,13 @@ instance GLensLike (GAnnC w) where
 
   second :: Optic (GAnnC w) (z :*: x) (z :*: y) x y
   second (GAnnC f) = GAnnC \(z :*: x) -> z :*: f x
+
+instance GLensLike (GForgetA r w) where
+  first :: Optic (GForgetA r w) (x :*: z) (y :*: z) x y
+  first (GForgetA f) = GForgetA \(x :*: _) -> f x
+
+  second :: Optic (GForgetA r w) (z :*: x) (z :*: y) x y
+  second (GForgetA f) = GForgetA \(_ :*: y) -> f y
 
 instance GLensLike (Forget1 r) where
   first :: Optic (Forget1 r) (x :*: z) (y :*: z) x y
@@ -116,6 +130,13 @@ instance Monoid w => GPrismLike (GAnnC w) where
 
   right :: Optic (GAnnC w) (z :+: x) (z :+: y) x y
   right (GAnnC f) = GAnnC \(x :*: y) -> x :*: f y
+
+instance Monoid w => GPrismLike (GForgetA r w) where
+  left :: Optic (GForgetA r w) (x :+: z) (y :+: z) x y
+  left (GForgetA f) = GForgetA \(x :*: _) -> f x
+
+  right :: Optic (GForgetA r w) (z :+: x) (z :+: y) x y
+  right (GForgetA f) = GForgetA \(_ :*: y) -> f y
 
 instance Monoid r => GPrismLike (Forget1 r) where
   left :: Optic (Forget1 r) (x :+: z) (y :+: z) x y

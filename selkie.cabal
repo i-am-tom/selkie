@@ -7,12 +7,12 @@ library
     Selkie.Annotation
     Selkie.Category
     Selkie.Generic
+    Selkie.Monad.State
     Selkie.Optics
     Selkie.Profunctor
     Selkie.Utilities
   other-modules:
     Selkie.Annotation.Category
-    Selkie.Annotation.Generic
     Selkie.Annotation.Profunctor
     Selkie.Annotation.Types
 
@@ -31,28 +31,17 @@ library
   build-depends:
     , base
     , constraints
+    , mtl
     , natural-transformation
     , profunctors
   hs-source-dirs: source
   ghc-options: -Wall -Wextra
   default-language: GHC2024
 
--- executable selkie
---   main-is: Main.hs
---   build-depends:
---     , base
---     , selkie
---   hs-source-dirs: binary
---   default-language: GHC2024
-
-test-suite tests
-  default-language: GHC2024
-  type: exitcode-stdio-1.0
-  hs-source-dirs: tests
+executable selkie
   main-is: Main.hs
   build-depends:
     , base
-    , containers
-    , hedgehog
-    , profunctors
     , selkie
+  hs-source-dirs: binary
+  default-language: GHC2024

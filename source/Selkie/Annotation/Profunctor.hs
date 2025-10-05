@@ -65,10 +65,10 @@ instance Monoid w => Choice (:+:) GAnnotate (GAnnC w) (GAnnC w) where
   right :: (GAnnotate x, GAnnotate y) => GAnnC w x y -> GAnnC w (z :+: x) (z :+: y)
   right (GAnnC f) = GAnnC \(z :*: x) -> z :*: f x
 
+---
+
 type ForgetA :: Type -> Type -> Type -> Type -> Type
 newtype ForgetA r w a b = ForgetA { runForgetA :: Ann a w -> r }
-
----
 
 instance Profunctor Annotate (AnnC w) (ForgetA r w) where
   type Arrow (ForgetA r w) = AnnC w
