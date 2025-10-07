@@ -8,9 +8,10 @@ import Control.Monad.IO.Class (MonadIO (..))
 import Data.Kind (Type)
 import GHC.Generics (Generic, Generically (..))
 import Selkie.Annotation (Annotate)
+import Selkie.Category (Category (id))
 import Selkie.Optics (HasConstructor (..), HasField (..), Traversal')
 import Selkie.Monad.State (MonadObservableState (..), runObservableStateT)
-import Prelude hiding (read)
+import Prelude hiding (id, read)
 
 type State :: Type
 data State
@@ -50,12 +51,21 @@ example :: (MonadObservableState State m, MonadIO m) => m ()
 example = do
   let username :: Traversal' State String
       username = field @"user" . constructor @"Authenticated" . field @"username"
+  
+  let dogLiking :: Traversal' State Bool
+      dogLiking = field @"user" . constructor @"Authenticated" . field @"likesDogs"
 
   listen username \name ->
     liftIO (putStrLn ("Name changed to " ++ name))
+  
+  listen dogLiking \case
+    True -> liftIO (putStrLn "No longer likes dogs")
+    False -> liftIO (putStrLn "Now likes dogs")
 
   listen (field @"user" . constructor @"Guest") \() ->
     liftIO (putStrLn ("User logged out"))
   
-  update (field @"user") \(p :: User) ->
-    Authenticated (Profile "Tom" True)
+  update (field @"user") \_ -> Authenticated (Profile "Tom" True)
+  update (field @"user") \_ -> Guest
+
+  update dogLiking \x -> not x

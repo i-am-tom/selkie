@@ -19,7 +19,6 @@ import Selkie.Optics.Helpers as M
 import Data.Monoid (Last (..))
 import Selkie.Annotation (Annotate (..), AnnC (..), ForgetA (..))
 import Data.Profunctor (Forget (..))
-import Debug.Trace qualified as Debug
 
 (^.) :: s -> Optic (Forget a) s t a b -> a
 (^.) s l = runForget (l (Forget id)) s
@@ -37,4 +36,4 @@ import Debug.Trace qualified as Debug
 (^.@) s l = runForgetA (l (ForgetA id)) s
 
 (.~@) :: forall w s a. (Annotate a, Monoid w) => Optic' (AnnC w) s a -> w -> (Ann s w -> Ann s w)
-(.~@) l w = annC (l (AnnC \x -> Debug.traceShow "Hello?" (attach @a w x)))
+(.~@) l w = annC (l (AnnC (attach @a w)))

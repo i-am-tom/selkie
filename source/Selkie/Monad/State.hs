@@ -7,6 +7,7 @@ module Selkie.Monad.State where
 import Control.Monad (join)
 import Control.Monad.IO.Class (MonadIO)
 import Control.Monad.State (StateT, evalStateT, get, modify, state)
+import Data.Foldable (fold)
 import Data.Function ((&))
 import Data.Kind (Type, Constraint)
 import Data.Monoid (Ap (..))
@@ -47,12 +48,7 @@ instance Monad m => MonadObservableState s (ObservableStateT s m) where
   update :: forall a. Annotate a => Traversal' s a -> (a -> a) -> ObservableStateT s m ()
   update l f = join do
     ObservableStateT do
-      let go :: s -> s
-          go = l %~ f
-
       state \(Annotated x ann) ->
-        ( case x ^? l of
-            Just x' -> active @a x' (ann ^.@ l)
-            Nothing -> mempty
-        , Annotated (go x) ann
+        ( fold (ann ^.@ l)
+        , Annotated (x & l %~ f) ann
         )
