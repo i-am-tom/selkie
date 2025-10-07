@@ -44,6 +44,10 @@ data Profile
   deriving Annotate via (Generically Profile)
 
 -- $> main
+--
+-- Name changed to Tom
+-- No longer likes dogs
+-- User logged out
 main :: IO ()
 main = runObservableStateT example (State Home Guest)
 
